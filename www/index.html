@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Points</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { 
+            margin: 0; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        
+        // Iconos SVG simples para reemplazar Lucide React
+        const MapPinIcon = () => (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                <circle cx="12" cy="10" r="3"/>
+            </svg>
+        );
+        
+        const DownloadIcon = () => (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7,10 12,15 17,10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+        );
+        
+        const TrashIcon = () => (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="3,6 5,6 21,6"/>
+                <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"/>
+                <line x1="10" y1="11" x2="10" y2="17"/>
+                <line x1="14" y1="11" x2="14" y2="17"/>
+            </svg>
+        );
+        
+        const AlertIcon = () => (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+        );
+
+        const GPSPointsApp = () => {
+            const [points, setPoints] = useState([]);
+            const [isLoading, setIsLoading] = useState(false);
+            const [error, setError] = useState('');
+            const [nextId, setNextId] = useState(1);
+
+            // Cargar datos guardados al iniciar
+            useEffect(() => {
+                const savedPoints = JSON.parse(localStorage.getItem('gpsPoints') || '[]');
+                const savedNextId = parseInt(localStorage.getItem('nextId') || '1');
+                setPoints(savedPoints);
+                setNextId(savedNextId);
+            }, []);
+
+            // Guardar en localStorage cuando cambien los puntos
+            useEffect(() => {
+                localStorage.setItem('gpsPoints', JSON.stringify(points));
+                localStorage.setItem('nextId', nextId.toString());
+            }, [points, nextId]);
+
+            const getCurrentLocation = () => {
+                setIsLoading(true);
+                setError('');
+
+                if (!navigator.geolocation) {
+                    setError('La geolocalización no está disponible en tu dispositivo');
+                    setIsLoading(false);
+                    return;
+                }
+
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const { latitude, longitude } = position.coords;
+                        const now = new Date();
+                        
+                        const newPoint = {
+                            id: nextId,
+                            latitude: latitude.toFixed(6),
+                            longitude: longitude.toFixed(6),
+                            date: now.toLocaleDateString('es-MX'),
+                            time: now.toLocaleTimeString('es-MX', { hour12: false })
+                        };
+
+                        setPoints(prev => [...prev, newPoint]);
+                        setNextId(prev => prev + 1);
+                        setIsLoading(false);
+                    },
+                    (error) => {
+                        let errorMessage = 'Error al obtener la ubicación';
+                        if (error.code === error.PERMISSION_DENIED) {
+                            errorMessage = 'Permiso denegado. Habilita la ubicación en tu navegador';
+                        } else if (error.code === error.POSITION_UNAVAILABLE) {
+                            errorMessage = 'Ubicación no disponible. Verifica que tengas GPS activado';
+                        } else if (error.code === error.TIMEOUT) {
+                            errorMessage = 'Tiempo agotado. Intenta nuevamente';
+                        }
+                        setError(errorMessage);
+                        setIsLoading(false);
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 0
+                    }
+                );
+            };
+
+            const downloadCSV = () => {
+                if (points.length === 0) {
+                    setError('No hay puntos para descargar');
+                    return;
+                }
+
+                const headers = ['ID', 'Latitud', 'Longitud', 'Fecha', 'Hora'];
+                const csvContent = [
+                    headers.join(','),
+                    ...points.map(point => 
+                        `${point.id},${point.latitude},${point.longitude},${point.date},${point.time}`
+                    )
+                ].join('\n');
+
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                
+                if (link.download !== undefined) {
+                    const url = URL.createObjectURL(blob);
+                    link.setAttribute('href', url);
+                    link.setAttribute('download', `puntos_interes_${new Date().toISOString().split('T')[0]}.csv`);
+                    link.style.visibility = 'hidden';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+            };
+
+            const clearAllPoints = () => {
+                if (window.confirm('¿Estás seguro de que quieres eliminar todos los puntos?')) {
+                    setPoints([]);
+                    setNextId(1);
+                }
+            };
+
+            const deletePoint = (id) => {
+                setPoints(prev => prev.filter(point => point.id !== id));
+            };
+
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+                    <div className="max-w-md mx-auto">
+                        {/* Header */}
+                        <div className="text-center mb-6">
+                            <div className="flex items-center justify-center mb-2">
+                                <MapPinIcon />
+                                <h1 className="text-2xl font-bold text-gray-800 ml-2">Puntos GPS</h1>
+                            </div>
+                            <p className="text-gray-600 text-sm">Guarda tus ubicaciones de interés</p>
+                        </div>
+
+                        {/* Error Message */}
+                        {error && (
+                            <div className="mb-4 p-3 bg-red-100 border border-red-300 rounded-lg flex items-center">
+                                <AlertIcon />
+                                <p className="text-red-700 text-sm ml-2">{error}</p>
+                            </div>
+                        )}
+
+                        {/* Main Action Button */}
+                        <button
+                            onClick={getCurrentLocation}
+                            disabled={isLoading}
+                            className={`w-full py-4 px-6 rounded-xl font-semibold text-white text-lg mb-6 transition-all duration-200 ${
+                                isLoading
+                                    ? 'bg-gray-400 cursor-not-allowed'
+                                    : 'bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 shadow-lg hover:shadow-xl'
+                            }`}
+                        >
+                            {isLoading ? (
+                                <div className="flex items-center justify-center">
+                                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                                    Obteniendo ubicación...
+                                </div>
+                            ) : (
+                                <div className="flex items-center justify-center">
+                                    <MapPinIcon />
+                                    <span className="ml-2">Guardar Ubicación Actual</span>
+                                </div>
+                            )}
+                        </button>
+
+                        {/* Action Buttons */}
+                        <div className="flex gap-2 mb-6">
+                            <button
+                                onClick={downloadCSV}
+                                disabled={points.length === 0}
+                                className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all duration-200 ${
+                                    points.length === 0
+                                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                        : 'bg-green-600 text-white hover:bg-green-700 shadow-md hover:shadow-lg'
+                                }`}
+                            >
+                                <div className="flex items-center justify-center">
+                                    <DownloadIcon />
+                                    <span className="ml-2">Descargar CSV</span>
+                                </div>
+                            </button>
+                            
+                            <button
+                                onClick={clearAllPoints}
+                                disabled={points.length === 0}
+                                className={`py-3 px-4 rounded-lg font-medium transition-all duration-200 ${
+                                    points.length === 0
+                                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                        : 'bg-red-600 text-white hover:bg-red-700 shadow-md hover:shadow-lg'
+                                }`}
+                            >
+                                <TrashIcon />
+                            </button>
+                        </div>
+
+                        {/* Stats */}
+                        <div className="bg-white rounded-lg p-4 mb-4 shadow-md">
+                            <div className="text-center">
+                                <div className="text-3xl font-bold text-indigo-600">{points.length}</div>
+                                <div className="text-gray-600 text-sm">Puntos guardados</div>
+                            </div>
+                        </div>
+
+                        {/* Points Table */}
+                        {points.length > 0 && (
+                            <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+                                <div className="bg-indigo-600 px-4 py-3">
+                                    <h2 className="text-white font-semibold">Mis Puntos de Interés</h2>
+                                </div>
+                                
+                                <div className="max-h-96 overflow-y-auto">
+                                    <table className="w-full">
+                                        <thead className="bg-gray-50 sticky top-0">
+                                            <tr>
+                                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Coordenadas</th>
+                                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Fecha/Hora</th>
+                                                <th className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase">-</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-200">
+                                            {points.map((point, index) => (
+                                                <tr key={point.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                                    <td className="px-3 py-3 text-sm font-medium text-gray-900">
+                                                        #{point.id}
+                                                    </td>
+                                                    <td className="px-3 py-3 text-xs text-gray-600">
+                                                        <div>{point.latitude}</div>
+                                                        <div>{point.longitude}</div>
+                                                    </td>
+                                                    <td className="px-3 py-3 text-xs text-gray-600">
+                                                        <div>{point.date}</div>
+                                                        <div>{point.time}</div>
+                                                    </td>
+                                                    <td className="px-2 py-3 text-center">
+                                                        <button
+                                                            onClick={() => deletePoint(point.id)}
+                                                            className="text-red-500 hover:text-red-700 p-1"
+                                                            title="Eliminar punto"
+                                                        >
+                                                            <TrashIcon />
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+
+                        {points.length === 0 && !isLoading && (
+                            <div className="bg-white rounded-lg p-8 text-center shadow-lg">
+                                <div className="w-16 h-16 mx-auto mb-4 text-gray-300">
+                                    <MapPinIcon />
+                                </div>
+                                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                                    No hay puntos guardados
+                                </h3>
+                                <p className="text-gray-500 text-sm">
+                                    Presiona "Guardar Ubicación Actual" para comenzar a guardar tus puntos de interés
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Footer */}
+                        <div className="text-center mt-6 text-xs text-gray-500">
+                            <p>Tus datos se guardan localmente en tu dispositivo</p>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        ReactDOM.render(<GPSPointsApp />, document.getElementById('root'));
+    </script>
+</body>
+</html>
